@@ -1,0 +1,10 @@
+// Déploiement sur Cloudflare Workers (site statique, aucun code serveur).
+// Cloudflare lit le dépôt GitHub et publie ce dossier à chaque push sur main.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "worldwise",
+  "compatibility_date": "2025-10-01",
+  "assets": {
+    "directory": "."
+  }
+}

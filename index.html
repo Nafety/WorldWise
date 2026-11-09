@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>WorldWise</title>
+  <meta name="description" content="Apprendre les drapeaux, les capitales et la carte des pays du monde.">
+  <meta name="theme-color" content="#2f5bd3">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="WorldWise">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+
+  <section id="menu">
+    <header class="entete">
+      <p id="sous-titre">Drapeaux, capitales et carte des pays et territoires du monde</p>
+    </header>
+    <div class="menu-grille">
+      <aside class="cote">
+        <h2>Région</h2>
+        <div id="seg-zone" class="zones"></div>
+        <h2>Réponses</h2>
+        <div id="seg-reponse" class="seg bascule"></div>
+        <h2>Temps après une erreur</h2>
+        <div class="reglage-delai">
+          <input type="range" class="curseur-delai" min="100" max="3000" step="100" aria-label="Temps avant la question suivante après une erreur">
+          <output class="valeur-delai"></output>
+        </div>
+        <p class="precision">Une bonne réponse passe à la suite en 0,1 s</p>
+      </aside>
+      <div id="jeux"></div>
+    </div>
+    <footer class="pied">
+      <button id="installer" class="lien" hidden>Installer l'application</button>
+    </footer>
+  </section>
+
+  <section id="jeu" hidden>
+    <header class="barre">
+      <button id="quitter" class="lien">← Menu</button>
+      <span id="titre-jeu"></span>
+      <label id="delai" title="Temps avant la question suivante après une erreur">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M9 2h6"/></svg>
+        <input type="range" class="curseur-delai" min="100" max="3000" step="100" aria-label="Temps avant la question suivante après une erreur">
+        <output class="valeur-delai"></output>
+      </label>
+      <span id="progres"></span>
+      <span id="score"></span>
+    </header>
+    <div id="question"></div>
+    <div id="carte-jeu" class="carte" hidden>
+      <svg viewBox="0 0 960 600" preserveAspectRatio="xMidYMid meet"></svg>
+      <div class="zoom">
+        <button class="zoom-plus" title="Zoomer">+</button>
+        <button class="zoom-moins" title="Dézoomer">−</button>
+        <button class="zoom-reset" title="Vue entière">⟲</button>
+      </div>
+    </div>
+    <div id="reponses"></div>
+    <p id="retour"></p>
+  </section>
+
+  <section id="fin" hidden>
+    <h2 id="fin-titre"></h2>
+    <p id="fin-detail"></p>
+    <div class="actions">
+      <button id="rejouer-erreurs" class="primaire">Rejouer les erreurs</button>
+      <button id="recommencer">Recommencer</button>
+      <button id="fin-menu" class="lien">Menu</button>
+    </div>
+    <div class="actions actions-rev">
+      <button id="ajouter-erreurs" class="rev-tout" hidden></button>
+      <button id="retirer-reussis" class="rev-tout" hidden></button>
+    </div>
+    <p id="fin-aide" class="aide-rev" hidden></p>
+    <table id="fin-erreurs" class="liste"></table>
+  </section>
+
+  <section id="explorer" hidden>
+    <header class="barre">
+      <button id="explorer-menu" class="lien">← Menu</button>
+      <input id="recherche" type="search" placeholder="Rechercher un pays…" autocomplete="off" list="noms-pays">
+      <datalist id="noms-pays"></datalist>
+    </header>
+    <div class="seg" id="seg-explorer"></div>
+    <div class="explorer-corps">
+      <div id="carte-explorer" class="carte">
+        <svg viewBox="0 0 960 600" preserveAspectRatio="xMidYMid meet"></svg>
+        <div class="zoom">
+          <button class="zoom-plus" title="Zoomer">+</button>
+          <button class="zoom-moins" title="Dézoomer">−</button>
+          <button class="zoom-reset" title="Vue entière">⟲</button>
+        </div>
+      </div>
+      <aside id="fiche"><p class="vide">Choisis un pays sur la carte, ou cherche-le ci-dessus.</p></aside>
+    </div>
+  </section>
+
+  <section id="revue" hidden>
+    <header class="barre">
+      <button id="revue-menu" class="lien">← Menu</button>
+      <span id="revue-compte"></span>
+    </header>
+    <div class="seg" id="seg-revue"></div>
+    <p id="revue-aide" class="aide-rev"></p>
+    <table id="revue-table" class="liste"></table>
+  </section>
+
+</main>
+<script src="vendor/d3.min.js"></script>
+<script src="vendor/topojson-client.min.js"></script>
+<script src="world.js"></script>
+<script src="data.js"></script>
+<script src="info.js"></script>
+<script src="decoupes.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

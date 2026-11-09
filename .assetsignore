@@ -1,0 +1,10 @@
+# Fichiers du dépôt qui ne doivent pas être publiés sur le site
+.git
+.github
+node_modules
+.wrangler
+outils
+lancer.bat
+wrangler.jsonc
+README.md
+.gitignore
