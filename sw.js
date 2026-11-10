@@ -1,7 +1,7 @@
 // Service worker : tout le site est mis en cache à l'installation, puis servi
 // depuis le cache (l'application marche hors ligne). Chaque visite en ligne
 // rafraîchit le cache en arrière-plan : une modification apparaît au chargement suivant.
-const CACHE = "worldwise-v1";
+const CACHE = "worldwise-v2";
 importScripts("data.js");
 
 const FICHIERS = [
