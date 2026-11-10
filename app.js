@@ -145,9 +145,38 @@ const attendu = (p) => (pourCapitales() ? p.cap : p.nom);
 const acceptees = (p) => (pourCapitales()
   ? [...p.capitales.map((c) => c.nom), ...p.altC]
   : [p.nom, ...p.altN]);
-const zoneDe = (id) => ZONES.find((z) => z.id === id);
-const dansZone = (p, z) => z === "WORLD" || p.ct === z
+// Plusieurs continents se cumulent : leur zone a pour id « EU+AS » (ordre de ZONES).
+const COMBINEES = new Map();
+function zoneCombinee(id) {
+  if (COMBINEES.has(id)) return COMBINEES.get(id);
+  const parts = id.split("+").map((i) => ZONES.find((z) => z.id === i)).filter((z) => z && z.bbox);
+  if (!parts.length) return ZONES[0];
+  const b = [Math.min(...parts.map((z) => z.bbox[0])), Math.min(...parts.map((z) => z.bbox[1])),
+    Math.max(...parts.map((z) => z.bbox[2])), Math.max(...parts.map((z) => z.bbox[3]))];
+  const z = { id, nom: parts.map((q) => q.nom).join(" + ") };
+  // Continents voisins (Europe + Asie, Europe + Afrique…) : carte cadrée sur eux ;
+  // trop éloignés pour un seul cadre : carte du monde.
+  if (b[2] - b[0] <= 180 && b[3] - b[1] <= 130) {
+    z.bbox = b;
+    z.centre = [(b[0] + b[2]) / 2, (b[1] + b[3]) / 2];
+  }
+  COMBINEES.set(id, z);
+  return z;
+}
+const zoneDe = (id) => ZONES.find((z) => z.id === id) || zoneCombinee(id);
+const continentsDe = (z) => (z === "WORLD" || z === "REV" ? [] : z.split("+"));
+const dansZone = (p, z) => z === "WORLD" || continentsDe(z).includes(p.ct)
   || (z === "REV" && THEMES_REV.some((t) => REVISER[t].has(p.code)));
+// Clic sur une région du menu : Monde et « À réviser » sont seuls ; un continent
+// s'ajoute aux continents déjà choisis, ou s'en retire.
+function basculerZone(id) {
+  if (id === "WORLD" || id === "REV") return id;
+  const choisis = new Set(continentsDe(etat.zone));
+  if (choisis.has(id)) choisis.delete(id);
+  else choisis.add(id);
+  const ids = ZONES.filter((z) => choisis.has(z.id)).map((z) => z.id);
+  return !ids.length || ids.length === ZONES.filter((z) => z.bbox).length ? "WORLD" : ids.join("+");
+}
 const drapeau = (p) => `flags/${p.code}.svg`;
 
 // Pays proposés pour le thème et la zone : sans capitale → pas de quiz des
@@ -383,7 +412,12 @@ function segment(el, items, actif, auChoix, desactive = () => false) {
   }
 }
 
-const libellesZones = (compte) => ZONES.map((z) => [z.id, `${z.nom} (${compte(z.id)})`]);
+// Une combinaison de continents choisie au menu s'ajoute aux onglets (après Monde).
+function libellesZones(compte, actuelle) {
+  const zones = [...ZONES];
+  if (actuelle.includes("+")) zones.splice(1, 0, zoneDe(actuelle));
+  return zones.map((z) => [z.id, `${z.nom} (${compte(z.id)})`]);
+}
 
 // --- Menu ------------------------------------------------------------------
 
@@ -484,11 +518,13 @@ function construireMenu() {
   const zones = $("#seg-zone");
   zones.innerHTML = "";
   for (const z of ZONES) {
-    const b = el("button", (z.id === etat.zone ? "on " : "") + (z.id === "REV" ? "zone-rev" : ""));
+    const on = z.id === etat.zone || continentsDe(etat.zone).includes(z.id);
+    const b = el("button", (on ? "on " : "") + (z.id === "REV" ? "zone-rev" : ""));
+    b.setAttribute("aria-pressed", on);
     const nom = el("span", null, z.nom);
     if (z.id === "REV") nom.insertAdjacentHTML("afterbegin", icone("reviser"));
     b.append(nom, el("span", "nombre", PAYS.filter((p) => dansZone(p, z.id)).length));
-    b.onclick = () => { etat.zone = z.id; sauver(); construireMenu(); };
+    b.onclick = () => { etat.zone = basculerZone(z.id); sauver(); construireMenu(); };
     zones.append(b);
   }
   segment($("#seg-reponse"), REPONSES, etat.reponse, (v) => { etat.reponse = v; sauver(); construireMenu(); });
@@ -896,7 +932,7 @@ let zoneExplorer = "WORLD";
 function explorer(z, choisi = null) {
   zoneExplorer = z;
   ecran("explorer");
-  segment($("#seg-explorer"), libellesZones((id) => PAYS.filter((p) => dansZone(p, id)).length),
+  segment($("#seg-explorer"), libellesZones((id) => PAYS.filter((p) => dansZone(p, id)).length, etat.zone),
     z, (v) => explorer(v));
   carteExplorer.dessiner(zoneDe(z), new Set(PAYS.filter((p) => dansZone(p, z)).map((p) => p.code)),
     (p) => selectionner(p), { titres: true });
@@ -1027,7 +1063,7 @@ recherche.addEventListener("keydown", (e) => {
 
 let zoneRevue = "WORLD";
 function revue() {
-  segment($("#seg-revue"), libellesZones((id) => PAYS.filter((p) => dansZone(p, id)).length),
+  segment($("#seg-revue"), libellesZones((id) => PAYS.filter((p) => dansZone(p, id)).length, etat.zone),
     zoneRevue, (v) => { zoneRevue = v; revue(); });
   const liste = PAYS.filter((p) => dansZone(p, zoneRevue))
     .sort((a, b) => a.nom.localeCompare(b.nom, "fr"));
