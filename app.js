@@ -19,6 +19,7 @@ const ICONES = {
   explore: '<circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/>',
   liste: '<path d="M9 6h12M9 12h12M9 18h12M4 6h.01M4 12h.01M4 18h.01"/>',
   reviser: '<path d="M6 3h12v18l-6-4.5L6 21z"/>',
+  point: '<circle cx="12" cy="12" r="3.5" fill="currentColor"/><circle cx="12" cy="12" r="8.5" stroke-dasharray="3 3"/>',
 };
 const icone = (nom) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONES[nom]}</svg>`;
 // Cases du menu. Les trois premiers jeux suivent le mode de réponse choisi dans
@@ -156,7 +157,7 @@ function zoneCombinee(id) {
   const z = { id, nom: parts.map((q) => q.nom).join(" + ") };
   // Continents voisins (Europe + Asie, Europe + Afrique…) : carte cadrée sur eux ;
   // trop éloignés pour un seul cadre : carte du monde.
-  if (b[2] - b[0] <= 180 && b[3] - b[1] <= 130) {
+  if (b[2] - b[0] <= 250 && b[3] - b[1] <= 130) {
     z.bbox = b;
     z.centre = [(b[0] + b[2]) / 2, (b[1] + b[3]) / 2];
   }
@@ -244,6 +245,25 @@ const FORMES = (() => {
 // Pays qu'on peut montrer sur la carte (forme ou point) : tous sauf le
 // Royaume-Uni, dessiné par ses quatre nations.
 const SUR_CARTE = new Set(PAYS.filter((p) => (p.num && FORMES.has(p.num)) || p.ll).map((p) => p.code));
+// Un point seulement là où on ne pourrait pas cliquer, même en zoomant : pays
+// sans forme sur le fond de carte (Tuvalu, Tokelau…), et micro-États collés à
+// leurs voisins, noyés dans les frontières (Andorre, Vatican, Gibraltar, Macao…).
+// Une île, même petite, se voit sur la mer : on zoome et on clique dessus.
+const POINT_DEFAUT = (p) => {
+  if (!(p.num && FORMES.has(p.num))) return true;
+  const i = INFOS[p.code];
+  return !!i && i.sup >= 0 && i.sup < 1000 && !!(i.voisins && i.voisins.length);
+};
+// Choix du joueur, pays par pays, depuis la Liste (code -> true/false) ; sinon la règle ci-dessus.
+let CHOIX_POINTS = {};
+try { CHOIX_POINTS = JSON.parse(localStorage.getItem("worldwise-points")) || {}; } catch (e) {}
+const aUnPoint = (p) => (p.code in CHOIX_POINTS ? CHOIX_POINTS[p.code] : POINT_DEFAUT(p));
+function choisirPoint(p, oui) {
+  const defaut = POINT_DEFAUT(p);
+  if (oui === defaut) delete CHOIX_POINTS[p.code];
+  else CHOIX_POINTS[p.code] = oui;
+  try { localStorage.setItem("worldwise-points", JSON.stringify(CHOIX_POINTS)); } catch (e) {}
+}
 const PARTIES = (p) => PAYS.filter((q) => q.partie && q.de === p.code);
 
 const W = 960, H = 600;
@@ -260,8 +280,13 @@ const MONDE = [-180, -70, 180, 84];
 function projection(z, h = H) {
   const ext = [[8, 8], [W - 8, h - 8]];
   if (!z.bbox) return d3.geoNaturalEarth1().fitExtent(ext, cadre(MONDE));
-  return d3.geoAzimuthalEqualArea().rotate([-z.centre[0], -z.centre[1]]).clipAngle(90)
-    .fitExtent(ext, cadre(z.bbox));
+  // L'Antarctique, écrasé en bande sur un planisphère, est vu du pôle.
+  if (z.id === "AN") return d3.geoAzimuthalEqualArea().rotate([0, 90]).clipAngle(90).fitExtent(ext, cadre(z.bbox));
+  // Les continents sont des morceaux du planisphère de la vue Monde, juste
+  // agrandis ; seule une zone à cheval sur le 180e méridien (Océanie) est
+  // recentrée pour ne pas être coupée en deux.
+  const lon = z.bbox[2] > 180 ? -z.centre[0] : 0;
+  return d3.geoNaturalEarth1().rotate([lon, 0]).fitExtent(ext, cadre(z.bbox));
 }
 
 // Sur un écran en hauteur (téléphone), la carte prend la hauteur disponible au lieu
@@ -315,8 +340,8 @@ function creerCarte(conteneur) {
       }
     }
 
-    // Les pays trop petits pour être cliqués (micro-États, îles) ont un point.
-    // En vue Monde, seuls les plus petits : sinon l'Europe disparaît sous les points.
+    // Les pays trop petits pour être touchés au doigt ont une zone de clic autour
+    // d'eux, visible (un point) seulement pour les minuscules ou sans forme.
     const seuil = z.bbox ? 250 : 40;
     marqueurs = g.append("g");
     for (const p of PAYS) {
@@ -324,14 +349,15 @@ function creerCarte(conteneur) {
       const e = elems.get(p.code) || {};
       elems.set(p.code, e);
       let pt = null;
+      const visible = aUnPoint(p);
       if (e.forme) {
         e.centre = chemin.centroid(e.forme);
-        if (chemin.area(e.forme) < seuil) pt = e.centre;
+        if (visible || chemin.area(e.forme) < seuil) pt = e.centre;
       } else if (p.ll) {
         pt = e.centre = proj(p.ll);
       }
       if (pt && isFinite(pt[0])) {
-        e.marq = marqueurs.append("circle").attr("class", "marq").attr("data-code", p.code)
+        e.marq = marqueurs.append("circle").attr("class", visible ? "marq point" : "marq").attr("data-code", p.code)
           .attr("cx", pt[0]).attr("cy", pt[1]).attr("r", R)
           .on("click", () => auClic(p));
         if (titres) e.marq.append("title").text(p.nom);
@@ -901,8 +927,25 @@ function boutonRevision(p, theme, apres) {
   return b;
 }
 
-// themes : boutons « à réviser » en bout de ligne (aucun, celui du quiz, ou les trois dans la liste).
-function remplirTable(table, liste, themes = [], apres = null) {
+function boutonPoint(p, apres) {
+  const b = el("button", "rev rev-point");
+  b.dataset.code = p.code;
+  const maj = () => {
+    const oui = aUnPoint(p);
+    b.classList.toggle("on", oui);
+    b.setAttribute("aria-pressed", String(oui));
+    b.title = oui ? "Point affiché sur la carte : le retirer" : "Pas de point sur la carte : en afficher un";
+    b.setAttribute("aria-label", `${b.title} (${p.nom})`);
+  };
+  b.innerHTML = icone("point");
+  b.onclick = () => { choisirPoint(p, !aUnPoint(p)); maj(); if (apres) apres(); };
+  maj();
+  return b;
+}
+
+// themes : boutons « à réviser » en bout de ligne (aucun, celui du quiz, ou les trois dans la liste) ;
+// points : bouton du point sur la carte (dans la liste).
+function remplirTable(table, liste, themes = [], apres = null, points = false) {
   table.innerHTML = "";
   for (const p of new Set(liste)) {
     const tr = table.insertRow();
@@ -921,7 +964,10 @@ function remplirTable(table, liste, themes = [], apres = null) {
     if (!themes.length) continue;
     const revs = tr.insertCell();
     revs.className = "revs";
-    for (const t of themes) revs.append(jouable(p, t) ? boutonRevision(p, t, apres) : el("span", "rev-vide"));
+    const boutons = el("div", "boutons");
+    revs.append(boutons);
+    for (const t of themes) boutons.append(jouable(p, t) ? boutonRevision(p, t, apres) : el("span", "rev-vide"));
+    if (points) boutons.append(SUR_CARTE.has(p.code) ? boutonPoint(p, apres) : el("span", "rev-vide"));
   }
 }
 
@@ -1068,9 +1114,24 @@ function revue() {
   const liste = PAYS.filter((p) => dansZone(p, zoneRevue))
     .sort((a, b) => a.nom.localeCompare(b.nom, "fr"));
   $("#revue-compte").textContent = `${liste.length} pays et territoires`;
-  remplirTable($("#revue-table"), liste, THEMES_REV);
-  $("#revue-aide").innerHTML = `Marque les pays à réviser : ${icone("flags")} drapeau, ${icone("caps")} capitale, ` +
-    `${icone("map")} emplacement. Joue-les ensuite avec la région « À réviser » du menu.`;
+  const aide = $("#revue-aide");
+  const majPoints = () => {
+    const n = PAYS.filter((p) => SUR_CARTE.has(p.code) && aUnPoint(p)).length;
+    aide.querySelector(".nb-points").textContent = `${n} pays ont un point.`;
+  };
+  remplirTable($("#revue-table"), liste, THEMES_REV, majPoints, true);
+  aide.innerHTML = `Marque les pays à réviser : ${icone("flags")} drapeau, ${icone("caps")} capitale, ` +
+    `${icone("map")} emplacement. Joue-les ensuite avec la région « À réviser » du menu.<br>` +
+    `${icone("point")} affiche ou retire le point d'un pays sur les cartes. <span class="nb-points"></span> ` +
+    `<button class="lien copier-points">Copier la liste des points</button>`;
+  majPoints();
+  aide.querySelector(".copier-points").onclick = (e) => {
+    const noms = PAYS.filter((p) => SUR_CARTE.has(p.code) && aUnPoint(p)).map((p) => p.nom).sort((a, b) => a.localeCompare(b, "fr"));
+    const texte = `Points sur la carte (${noms.length}) : ${noms.join(", ")}`;
+    const fait = () => { e.target.textContent = "Copié !"; setTimeout(() => { e.target.textContent = "Copier la liste des points"; }, 1500); };
+    if (navigator.clipboard) navigator.clipboard.writeText(texte).then(fait, () => window.prompt("Liste des points :", texte));
+    else window.prompt("Liste des points :", texte);
+  };
   ecran("revue");
 }
 

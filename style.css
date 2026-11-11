@@ -316,7 +316,12 @@ body.accueil main { max-width: 1140px; padding-top: max(32px, env(safe-area-inse
 
 .pays { fill: var(--land); stroke: var(--card); stroke-width: .6; vector-effect: non-scaling-stroke; }
 .pays.hors { fill: var(--land-out); pointer-events: none; }
-.marq { fill: var(--land); stroke: var(--fg); stroke-width: 1; vector-effect: non-scaling-stroke; }
+/* Petits pays : zone de clic invisible (le trait transparent l'élargit au doigt).
+   Les minuscules (.point : Andorre, Malte, îles…) sont dessinés comme un point. */
+.marq:not(.point), .marq:not(.point):hover {
+  fill: transparent !important; stroke: transparent; stroke-width: 8; vector-effect: non-scaling-stroke;
+}
+.marq.point { fill: var(--land); stroke: var(--fg); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .carte.cliquable .pays:not(.hors), .carte.cliquable .marq, #carte-explorer .pays:not(.hors), #carte-explorer .marq { cursor: pointer; }
 @media (hover: hover) {
   .carte.cliquable .pays:not(.hors):hover, .carte.cliquable .marq:hover,
@@ -459,6 +464,7 @@ input[type="range"], #delai input { height: 32px; margin: 0; }
 .actions-rev:not(:has(button:not([hidden]))) { display: none; }
 .rev-tout { background: var(--accent-soft); border-color: transparent; color: var(--accent); font-weight: 600; }
 .liste .revs { width: 1%; white-space: nowrap; text-align: right; }
+.liste .revs .boutons { display: inline-flex; }
 .rev, .rev-vide { display: inline-flex; width: 34px; height: 34px; margin-left: 4px; vertical-align: middle; }
 .rev { align-items: center; justify-content: center; padding: 0; border-radius: 9px; color: var(--muted); }
 .rev svg { width: 17px; height: 17px; }
@@ -470,6 +476,11 @@ input[type="range"], #delai input { height: 32px; margin: 0; }
   .liste td { padding: 7px 5px; }
   .liste td:first-child { width: 40px; }
   .rev, .rev-vide { margin-left: 2px; }
+}
+/* Petit téléphone : les 4 boutons de la liste en carré 2 × 2, pour laisser la place aux noms. */
+@media (max-width: 400px) {
+  #revue-table .boutons { display: grid; grid-template-columns: repeat(2, 34px); gap: 4px; }
+  #revue-table .rev, #revue-table .rev-vide { margin: 0; }
 }
 @media (max-width: 620px) {
   .zones .zone-rev { margin-top: 0; }

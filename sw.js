@@ -1,7 +1,6 @@
-// Service worker : tout le site est mis en cache à l'installation, puis servi
-// depuis le cache (l'application marche hors ligne). Chaque visite en ligne
-// rafraîchit le cache en arrière-plan : une modification apparaît au chargement suivant.
-const CACHE = "worldwise-v3";
+// Service worker : tout le site est mis en cache à l'installation, pour que
+// l'application marche hors ligne.
+const CACHE = "worldwise-v9";
 importScripts("data.js");
 
 const FICHIERS = [
@@ -24,16 +23,23 @@ self.addEventListener("activate", (e) => {
   );
 });
 
+// Drapeaux et icônes ne changent jamais : servis depuis le cache. Le reste (page,
+// code, données) vient du réseau d'abord, revérifié auprès du serveur, pour qu'une
+// mise à jour se voie dès le premier chargement ; le cache ne sert que hors ligne
+// ou si le réseau ne répond pas en 3 s.
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== "GET" || url.origin !== location.origin) return;
+  const fixe = /\/(flags|icons|vendor)\//.test(url.pathname);
   e.respondWith(
     caches.open(CACHE).then(async (cache) => {
       const enCache = await cache.match(e.request, { ignoreSearch: true });
-      const reseau = fetch(e.request)
-        .then((rep) => { if (rep.ok) cache.put(e.request, rep.clone()); return rep; })
-        .catch(() => enCache);
-      return enCache || reseau;
+      if (fixe && enCache) return enCache;
+      const reseau = fetch(e.request, { cache: "no-cache" })
+        .then((rep) => { if (rep.ok) cache.put(e.request, rep.clone()); return rep; });
+      if (!enCache) return reseau;
+      const delai = new Promise((ok) => setTimeout(() => ok(enCache), 3000));
+      return Promise.race([reseau.catch(() => enCache), delai]);
     })
   );
 });
