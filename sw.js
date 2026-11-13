@@ -1,6 +1,6 @@
 // Service worker : tout le site est mis en cache à l'installation, pour que
 // l'application marche hors ligne.
-const CACHE = "worldwise-v9";
+const CACHE = "worldwise-v13";
 importScripts("data.js");
 
 const FICHIERS = [
@@ -12,7 +12,10 @@ const FICHIERS = [
 ];
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FICHIERS)).then(() => self.skipWaiting()));
+  // cache: "reload" : on prend les fichiers sur le serveur, jamais une vieille copie du navigateur.
+  e.waitUntil(caches.open(CACHE)
+    .then((c) => c.addAll(FICHIERS.map((f) => new Request(f, { cache: "reload" }))))
+    .then(() => self.skipWaiting()));
 });
 
 self.addEventListener("activate", (e) => {

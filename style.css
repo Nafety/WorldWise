@@ -316,11 +316,7 @@ body.accueil main { max-width: 1140px; padding-top: max(32px, env(safe-area-inse
 
 .pays { fill: var(--land); stroke: var(--card); stroke-width: .6; vector-effect: non-scaling-stroke; }
 .pays.hors { fill: var(--land-out); pointer-events: none; }
-/* Petits pays : zone de clic invisible (le trait transparent l'élargit au doigt).
-   Les minuscules (.point : Andorre, Malte, îles…) sont dessinés comme un point. */
-.marq:not(.point), .marq:not(.point):hover {
-  fill: transparent !important; stroke: transparent; stroke-width: 8; vector-effect: non-scaling-stroke;
-}
+/* Pays trop petits pour être cliqués (Andorre, Gibraltar…) : dessinés comme un point. */
 .marq.point { fill: var(--land); stroke: var(--fg); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .carte.cliquable .pays:not(.hors), .carte.cliquable .marq, #carte-explorer .pays:not(.hors), #carte-explorer .marq { cursor: pointer; }
 @media (hover: hover) {
@@ -332,6 +328,12 @@ body.accueil main { max-width: 1140px; padding-top: max(32px, env(safe-area-inse
 .cible { fill: var(--accent) !important; }
 .good { fill: var(--good) !important; }
 .bad { fill: var(--bad) !important; }
+.noms { pointer-events: none; }
+.nom {
+  fill: var(--fg); stroke: var(--card); paint-order: stroke; stroke-linejoin: round;
+  font-weight: 600; text-anchor: middle; dominant-baseline: central;
+}
+.nom-point { text-anchor: start; }
 .anneau { fill: none; stroke: var(--accent); stroke-width: 2.5; vector-effect: non-scaling-stroke; pointer-events: none; }
 .anneau.good { stroke: var(--good); fill: none !important; }
 

@@ -185,7 +185,7 @@ const drapeau = (p) => `flags/${p.code}.svg`;
 // ni quiz des capitales (la question n'y montre que le drapeau).
 const jouable = (p, theme) => (theme !== "caps" || (p.capitales.length && !DOUBLES.has(p.code)))
   && (theme !== "flags" || !DOUBLES.has(p.code))
-  && (theme !== "map" || SUR_CARTE.has(p.code));
+  && (theme !== "map" || (p.num && FORMES.has(p.num)) || (p.ll && aUnPoint(p)));
 // En zone « À réviser », chaque jeu ne prend que les pays de sa propre liste.
 function selection(z = etat.zone, theme = etat.theme) {
   return PAYS.filter((p) => (z === "REV" ? REVISER[theme].has(p.code) : dansZone(p, z)) && jouable(p, theme));
@@ -245,18 +245,34 @@ const FORMES = (() => {
 // Pays qu'on peut montrer sur la carte (forme ou point) : tous sauf le
 // Royaume-Uni, dessiné par ses quatre nations.
 const SUR_CARTE = new Set(PAYS.filter((p) => (p.num && FORMES.has(p.num)) || p.ll).map((p) => p.code));
-// Un point seulement là où on ne pourrait pas cliquer, même en zoomant : pays
-// sans forme sur le fond de carte (Tuvalu, Tokelau…), et micro-États collés à
-// leurs voisins, noyés dans les frontières (Andorre, Vatican, Gibraltar, Macao…).
-// Une île, même petite, se voit sur la mer : on zoome et on clique dessus.
-const POINT_DEFAUT = (p) => {
-  if (!(p.num && FORMES.has(p.num))) return true;
-  const i = INFOS[p.code];
-  return !!i && i.sup >= 0 && i.sup < 1000 && !!(i.voisins && i.voisins.length);
-};
+// Pays avec un point par défaut (réglable pays par pays dans la Liste).
+// Europe, Asie, Afrique : choisis à la main. Ailleurs, les mêmes critères :
+// micro-États noyés dans les frontières, et petites îles ou archipels isolés en
+// pleine mer (jusqu'à ~5 000 km², comme le Cap-Vert ou La Réunion). Pas les îles
+// proches d'une côte (Malte, Jersey, Bahreïn, Trinité) ni les plus grandes
+// (Fidji, Vanuatu, Malouines), qu'on trouve et clique en zoomant.
+const POINTS_PAR_DEFAUT = new Set([
+  // Europe
+  "ad", "gi", "li", "mc", "sm", "va",
+  // Asie
+  "cc", "cx", "hk", "mo", "mv", "sg", "tl",
+  // Afrique
+  "cv", "eh", "io", "mu", "re", "sc", "sh", "st", "yt",
+  // Amérique du Nord : Antilles et îles isolées
+  "ag", "ai", "aw", "bb", "bl", "bm", "bq", "cw", "dm", "gd", "gp", "kn", "ky",
+  "lc", "mf", "mq", "ms", "sx", "tc", "vc", "vg", "vi",
+  // Océanie
+  "as", "ck", "fm", "gu", "ki", "mh", "mp", "nf", "nr", "nu", "pf", "pn", "pw",
+  "tk", "to", "tv", "um", "wf", "ws",
+  // Antarctique et mers australes
+  "bv", "gs", "hm", "tf",
+]);
+const POINT_DEFAUT = (p) => POINTS_PAR_DEFAUT.has(p.code);
 // Choix du joueur, pays par pays, depuis la Liste (code -> true/false) ; sinon la règle ci-dessus.
 let CHOIX_POINTS = {};
 try { CHOIX_POINTS = JSON.parse(localStorage.getItem("worldwise-points")) || {}; } catch (e) {}
+// Un choix devenu identique au réglage par défaut n'a plus lieu d'être gardé.
+for (const p of PAYS) if (p.code in CHOIX_POINTS && CHOIX_POINTS[p.code] === POINT_DEFAUT(p)) delete CHOIX_POINTS[p.code];
 const aUnPoint = (p) => (p.code in CHOIX_POINTS ? CHOIX_POINTS[p.code] : POINT_DEFAUT(p));
 function choisirPoint(p, oui) {
   const defaut = POINT_DEFAUT(p);
@@ -310,19 +326,44 @@ function creerCarte(conteneur) {
   const zoom = d3.zoom().scaleExtent([1, 60]).clickDistance(5).on("zoom", (ev) => {
     k = ev.transform.k;
     g.attr("transform", ev.transform);
-    marqueurs.selectAll("circle").attr("r", R / Math.sqrt(k));
+    g.selectAll("circle.marq").attr("r", R / Math.sqrt(k));
     if (anneau.attr("data-on")) anneau.attr("r", R_ANNEAU / k);
+    placerNoms();
   });
+
+  // Noms écrits sur la carte : chacun n'apparaît que s'il tient dans son pays
+  // (ou, pour un point, une fois assez zoomé) et ne chevauche aucun autre nom ;
+  // en zoomant, de plus en plus de noms s'affichent.
+  const TAILLE_NOM = 10.5; // en pixels à l'écran, quel que soit l'appareil
+  let noms = null, etiquettes = [];
+  function placerNoms() {
+    if (!noms) return;
+    const ecranParUnite = (svg.node().getBoundingClientRect().width || W) / W;
+    const t = TAILLE_NOM / ecranParUnite / k;
+    noms.attr("font-size", t).attr("stroke-width", 3 / ecranParUnite / k);
+    const poses = [];
+    for (const n of etiquettes) {
+      const l = n.l * t, hh = t;
+      let ok = n.point ? k >= 3 : n.w * 1.15 >= l && n.h >= hh * 1.1;
+      const x0 = n.point ? n.x + 7 / Math.sqrt(k) : n.x - l / 2;
+      const b = [x0 - t * 0.2, n.y - hh * 0.6, x0 + l + t * 0.2, n.y + hh * 0.6];
+      if (ok) ok = !poses.some((a) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3]);
+      if (ok) poses.push(b);
+      n.el.attr("display", ok ? null : "none");
+      if (n.point) n.el.attr("x", x0);
+    }
+  }
 
   conteneur.querySelector(".zoom-plus").onclick = () => svg.transition().duration(200).call(zoom.scaleBy, 2);
   conteneur.querySelector(".zoom-moins").onclick = () => svg.transition().duration(200).call(zoom.scaleBy, 0.5);
   conteneur.querySelector(".zoom-reset").onclick = () => svg.transition().duration(300).call(zoom.transform, d3.zoomIdentity);
 
   // actifs : codes cliquables ; les autres pays sont dessinés en fond.
-  function dessiner(z, actifs, auClic, { titres = false } = {}) {
+  function dessiner(z, actifs, auClic, { titres = false, avecNoms = false } = {}) {
     svg.selectAll("*").remove();
     elems = new Map();
     transitoires = [];
+    noms = null; etiquettes = [];
     h = hauteurCarte(svg.node(), z);
     svg.attr("viewBox", `0 0 ${W} ${h}`);
     const proj = projection(z, h);
@@ -340,31 +381,61 @@ function creerCarte(conteneur) {
       }
     }
 
-    // Les pays trop petits pour être touchés au doigt ont une zone de clic autour
-    // d'eux, visible (un point) seulement pour les minuscules ou sans forme.
-    const seuil = z.bbox ? 250 : 40;
+    // Seuls les pays qui ont un point (réglable dans la Liste) en reçoivent un ;
+    // les autres n'ont que leur territoire, sans aucune zone de clic en plus.
     marqueurs = g.append("g");
     for (const p of PAYS) {
       if (!actifs.has(p.code)) continue;
       const e = elems.get(p.code) || {};
       elems.set(p.code, e);
-      let pt = null;
-      const visible = aUnPoint(p);
-      if (e.forme) {
-        e.centre = chemin.centroid(e.forme);
-        if (visible || chemin.area(e.forme) < seuil) pt = e.centre;
-      } else if (p.ll) {
-        pt = e.centre = proj(p.ll);
-      }
+      e.centre = e.forme ? chemin.centroid(e.forme) : p.ll ? proj(p.ll) : null;
+      const pt = aUnPoint(p) ? e.centre : null;
       if (pt && isFinite(pt[0])) {
-        e.marq = marqueurs.append("circle").attr("class", visible ? "marq point" : "marq").attr("data-code", p.code)
+        e.marq = marqueurs.append("circle").attr("class", "marq point").attr("data-code", p.code)
           .attr("cx", pt[0]).attr("cy", pt[1]).attr("r", R)
           .on("click", () => auClic(p));
         if (titres) e.marq.append("title").text(p.nom);
       }
     }
+    if (avecNoms) creerNoms(actifs);
     anneau = g.append("circle").attr("class", "anneau").attr("r", 0);
     svg.call(zoom).call(zoom.transform, d3.zoomIdentity);
+  }
+
+  // Le nom se place au centre du plus grand morceau du pays (la France
+  // métropolitaine, pas la Guyane) ; les plus grands pays passent en premier.
+  function creerNoms(actifs) {
+    noms = g.append("g").attr("class", "noms");
+    for (const p of PAYS) {
+      const e = elems.get(p.code);
+      if (!actifs.has(p.code) || !e || !e.centre || !isFinite(e.centre[0])) continue;
+      let n;
+      if (e.forme) {
+        const geo = e.forme.geometry || e.forme;
+        const morceaux = geo.type === "MultiPolygon"
+          ? geo.coordinates.map((c) => ({ type: "Polygon", coordinates: c })) : [geo];
+        let best = null, aire = -1;
+        for (const m of morceaux) { const a = chemin.area(m); if (a > aire) { aire = a; best = m; } }
+        const [[x0, y0], [x1, y1]] = chemin.bounds(best);
+        const [x, y] = chemin.centroid(best);
+        if (!isFinite(x)) continue;
+        n = { x, y, w: x1 - x0, h: y1 - y0, aire: chemin.area(e.forme), point: false };
+      } else if (e.marq) {
+        n = { x: e.centre[0], y: e.centre[1], w: 0, h: 0, aire: 0, point: true };
+      } else continue;
+      if (e.marq && n.w < 1) n.point = true;
+      n.el = noms.append("text").attr("class", "nom" + (n.point ? " nom-point" : ""))
+        .attr("x", n.x).attr("y", n.y).text(p.nom);
+      etiquettes.push(n);
+    }
+    // Largeur du texte pour une taille de 1 (mesurée une fois).
+    noms.attr("font-size", 100);
+    for (const n of etiquettes) {
+      let l = 0;
+      try { l = n.el.node().getComputedTextLength() / 100; } catch (err) {}
+      n.l = l || n.el.text().length * 0.58;
+    }
+    etiquettes.sort((a, b) => (a.point - b.point) || b.aire - a.aire);
   }
 
   // Un pays sans forme propre (Royaume-Uni) est montré par ses nations.
@@ -981,7 +1052,7 @@ function explorer(z, choisi = null) {
   segment($("#seg-explorer"), libellesZones((id) => PAYS.filter((p) => dansZone(p, id)).length, etat.zone),
     z, (v) => explorer(v));
   carteExplorer.dessiner(zoneDe(z), new Set(PAYS.filter((p) => dansZone(p, z)).map((p) => p.code)),
-    (p) => selectionner(p), { titres: true });
+    (p) => selectionner(p), { titres: true, avecNoms: true });
   if (choisi) selectionner(choisi, true);
   else $("#fiche").innerHTML = '<p class="vide">Choisis un pays sur la carte, ou cherche-le ci-dessus.</p>';
 }
@@ -1138,7 +1209,14 @@ function revue() {
 // --- Application installable -------------------------------------------------
 
 if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
-  navigator.serviceWorker.register("sw.js").catch(() => {});
+  // Quand une nouvelle version prend la main, la page se recharge d'elle-même
+  // une fois : la mise à jour se voit tout de suite, sans recharger à la main.
+  const avait = !!navigator.serviceWorker.controller;
+  let recharge = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (avait && !recharge) { recharge = true; location.reload(); }
+  });
+  navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).catch(() => {});
 }
 let invitation = null;
 window.addEventListener("beforeinstallprompt", (e) => {
