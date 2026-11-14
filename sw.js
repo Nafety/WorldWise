@@ -1,6 +1,6 @@
 // Service worker : tout le site est mis en cache à l'installation, pour que
 // l'application marche hors ligne.
-const CACHE = "worldwise-v24";
+const CACHE = "worldwise-v25";
 importScripts("data.js");
 
 // Les photos des repères de panneaux (dossier photos/) ne sont pas

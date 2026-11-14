@@ -154,10 +154,14 @@ const pourEcritures = () => etat.theme === "ecritures";
 // la réponse est un des pays de la langue.
 const estMot = (p) => p && p.mot !== undefined;
 const paysDuMot = (m) => m.pays.map((c) => PAR_CODE.get(c));
-const listePays = (m, max = 4) => {
-  const noms = paysDuMot(m).map((p) => p.nom);
+// « Espagne, Mexique, Argentine, Chili… (20 pays) » : les pays de la zone choisie d'abord.
+const nomsGroupe = (codes, max = 4) => {
+  const z = etat.zone === "REV" ? "WORLD" : etat.zone;
+  const pays = codes.map((c) => PAR_CODE.get(c)).filter(Boolean);
+  const noms = [...pays.filter((p) => dansZone(p, z)), ...pays.filter((p) => !dansZone(p, z))].map((p) => p.nom);
   return noms.length > max ? `${noms.slice(0, max).join(", ")}… (${noms.length} pays)` : noms.join(", ");
 };
+const listePays = (m, max = 4) => nomsGroupe(m.pays, max);
 const attendu = (p) => (estMot(p) ? listePays(p) : pourCapitales() ? p.cap : p.nom);
 const acceptees = (p) => (estMot(p) ? paysDuMot(p).flatMap((q) => [q.nom, ...q.altN])
   : pourCapitales() ? [...p.capitales.map((c) => c.nom), ...p.altC]
@@ -221,15 +225,24 @@ const languesDe = (z) => LANGUES.filter((l) => paysLangueDans(l, z).length);
 const motsDe = (z) => languesDe(z).flatMap((l) => l.mots.map(([mot, sens]) =>
   ({ l, mot, sens, pays: l.pays.split(" ").filter((c) => PAR_CODE.has(c)), code: "" })));
 // Une partie : autant de mots en alphabet latin que dans les autres écritures,
-// deux mots au plus par langue, 60 questions au plus.
+// 100 questions au plus. Les langues passent chacune à leur tour (un mot de chaque
+// langue avant d'en reprendre une), pour en voir le plus possible.
 function tirageLangues(mots) {
   const parLangue = new Map();
   for (const m of melanger(mots.slice())) parLangue.set(m.l, [...(parLangue.get(m.l) || []), m]);
-  const latin = [], autres = [];
-  for (const [l, liste] of parLangue) (l.ecriture === "latin" ? latin : autres).push(...liste.slice(0, 2));
-  const n = Math.min(30, latin.length, autres.length) || Math.max(latin.length, autres.length);
-  return melanger([...melanger(latin).slice(0, n), ...melanger(autres).slice(0, n)]);
+  const tourner = (langues) => {
+    const files = melanger(langues.map(([, liste]) => liste.slice()));
+    const sortie = [];
+    while (files.some((f) => f.length)) for (const f of files) if (f.length) sortie.push(f.shift());
+    return sortie;
+  };
+  const latin = tourner([...parLangue].filter(([l]) => l.ecriture === "latin"));
+  const autres = tourner([...parLangue].filter(([l]) => l.ecriture !== "latin"));
+  const n = Math.min(50, latin.length, autres.length) || Math.min(100, Math.max(latin.length, autres.length));
+  return melanger([...latin.slice(0, n), ...autres.slice(0, n)]);
 }
+// Réponse proposée dans les 4 choix : une langue, montrée par ses pays.
+const groupe = (l, codes) => ({ l, code: l.id, pays: codes, nom: nomsGroupe(codes) });
 // Questions d'une nouvelle partie du jeu courant.
 const questionsDuJeu = () => (pourEcritures() ? tirageLangues(selection()) : selection());
 
@@ -814,12 +827,10 @@ function question() {
 
   const q = $("#question");
   if (pourEcritures()) {
-    // Le pays proposé parmi les 4 choix : un des pays de la langue, dans la zone si possible.
-    const z = etat.zone === "REV" ? "WORLD" : etat.zone;
-    const dans = p.pays.filter((c) => dansZone(PAR_CODE.get(c), z));
-    p.bon = PAR_CODE.get(auHasard(dans.length ? dans : p.pays));
-    p.code = p.bon.code;
-    q.innerHTML = '<div class="enseigne"></div><p class="consigne">Dans quel pays ?</p>';
+    // La bonne réponse des 4 choix : tous les pays de la langue.
+    p.bon = groupe(p.l, p.pays);
+    p.code = p.l.id;
+    q.innerHTML = '<div class="enseigne"></div><p class="consigne">Dans quel(s) pays ?</p>';
     q.querySelector(".enseigne").textContent = p.mot;
   } else if (etat.theme === "flags" || etat.theme === "caps") {
     q.innerHTML = `<img class="drapeau" alt="drapeau à identifier" src="${drapeau(p)}">`;
@@ -838,7 +849,7 @@ function question() {
   if (etat.mode === "qcm") {
     for (const option of propositions(p)) {
       const b = document.createElement("button");
-      b.textContent = attendu(option);
+      b.textContent = pourEcritures() ? option.nom : attendu(option);
       b.onclick = () => choisir(b, option, p);
       b.dataset.code = option.code;
       zoneRep.append(b);
@@ -970,22 +981,34 @@ function brancherSuggestions(input, ul, valider) {
 // 3 leurres du même continent, pris dans la même sélection : plus instructif
 // que des réponses absurdes.
 function propositions(p) {
-  // Langues : des pays où on écrit une langue voisine (même alphabet, puis
-  // alphabet ressemblant), jamais un pays où la langue du mot se lit aussi.
+  // Langues : les pays d'autres langues de même alphabet (puis d'alphabet
+  // ressemblant), de la zone choisie d'abord, sans les pays où la langue du mot
+  // se lit aussi.
   if (pourEcritures()) {
     const ecr = ECRITURE.get(p.l.ecriture);
-    const voisines = (f) => melanger(LANGUES.filter((l) => l !== p.l && f(l)).slice())
-      .flatMap((l) => melanger(l.pays.split(" ").slice()));
-    const ordre = [
-      ...voisines((l) => l.ecriture === p.l.ecriture),
-      ...voisines((l) => ecr.famille && ECRITURE.get(l.ecriture).famille === ecr.famille),
-      ...melanger(PAYS.map((q) => q.code)),
-    ];
     const z = etat.zone === "REV" ? "WORLD" : etat.zone;
-    const possibles = [...new Set(ordre)].filter((c) => PAR_CODE.has(c) && !p.pays.includes(c) && !PAR_CODE.get(c).partie);
-    // de la zone choisie d'abord (en Europe, des leurres européens)
-    const leurres = [...possibles.filter((c) => dansZone(PAR_CODE.get(c), z)), ...possibles]
-      .filter((c, i, t) => t.indexOf(c) === i).slice(0, 3).map((c) => PAR_CODE.get(c));
+    // Dans la zone choisie d'abord, puis sur le continent du pays principal de la langue.
+    const ct = PAR_CODE.get(p.pays[0]).ct;
+    const paysDe = (l) => l.pays.split(" ").filter((c) => PAR_CODE.has(c)).map((c) => PAR_CODE.get(c));
+    const rang = (l) => (paysDe(l).some((q) => dansZone(q, z)) ? 0 : 2) + (paysDe(l).some((q) => q.ct === ct) ? 0 : 1);
+    const parZone = (ls) => melanger(ls.slice()).map((l) => [rang(l), l]).sort((a, b) => a[0] - b[0]).map(([, l]) => l);
+    const autres = LANGUES.filter((l) => l !== p.l);
+    const ordre = [
+      ...parZone(autres.filter((l) => l.ecriture === p.l.ecriture)),
+      ...parZone(autres.filter((l) => l.ecriture !== p.l.ecriture && ecr.famille && ECRITURE.get(l.ecriture).famille === ecr.famille)),
+      ...parZone(autres.filter((l) => l.ecriture !== p.l.ecriture)),
+    ];
+    const vus = new Set([p.bon.nom]);
+    const leurres = [];
+    for (const l of ordre) {
+      const codes = l.pays.split(" ").filter((c) => PAR_CODE.has(c) && !p.pays.includes(c));
+      if (!codes.length) continue;
+      const g = groupe(l, codes);
+      if (vus.has(g.nom)) continue;
+      vus.add(g.nom);
+      leurres.push(g);
+      if (leurres.length === 3) break;
+    }
     return melanger([p.bon, ...leurres]);
   }
   const vus = new Set([attendu(p)]);
