@@ -225,6 +225,16 @@ body.accueil main { max-width: 1140px; padding-top: max(32px, env(safe-area-inse
 .mini-fiche span { display: flex; flex-direction: column; min-width: 0; }
 .mini-fiche strong { font-size: 13px; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+/* Illustrations des jeux GeoGuessr */
+.enseignes { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.enseigne-mini {
+  background: var(--card); border: 2px solid var(--fg); border-radius: 6px; padding: 4px 14px;
+  font-size: 20px; font-weight: 700; box-shadow: 0 4px 10px rgba(0, 0, 0, .12); white-space: nowrap;
+}
+.enseigne-mini.e0 { transform: rotate(-4deg); }
+.enseigne-mini.e1 { transform: translateX(26px) rotate(2deg); }
+.enseigne-mini.e2 { transform: translateX(-18px) rotate(-1deg); }
+
 .pied { display: flex; justify-content: center; margin-top: 8px; }
 
 @media (max-width: 900px) {
@@ -258,6 +268,15 @@ body.accueil main { max-width: 1140px; padding-top: max(32px, env(safe-area-inse
 #question { text-align: center; margin-bottom: 18px; font-size: 20px; min-height: 30px; }
 #question strong { font-size: 26px; }
 .drapeau { display: block; margin: 0 auto; height: 180px; max-width: 100%; border: 1px solid var(--line); border-radius: 4px; }
+/* Écritures : le mot comme sur une enseigne */
+.enseigne {
+  display: inline-block; max-width: 100%; margin: 8px auto 0; padding: 18px 30px;
+  background: var(--card); border: 3px solid var(--fg); border-radius: 8px;
+  font-size: 46px; font-weight: 700; line-height: 1.35; overflow-wrap: anywhere;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, .12);
+}
+.consigne { margin: 12px 0 0; font-size: 16px; color: var(--muted); }
+.liste td.mot { font-size: 22px; font-weight: 700; }
 .drapeau-mini { height: 22px; border: 1px solid var(--line); border-radius: 2px; vertical-align: -4px; margin-right: 8px; }
 
 #reponses { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -391,6 +410,7 @@ body.accueil main { max-width: 1140px; padding-top: max(32px, env(safe-area-inse
 @media (max-width: 520px) {
   #reponses { grid-template-columns: 1fr; }
   .drapeau { height: 140px; }
+  .enseigne { font-size: 34px; padding: 12px 20px; }
   .seg button { padding: 7px 11px; font-size: 15px; }
 }
 
@@ -487,3 +507,24 @@ input[type="range"], #delai input { height: 32px; margin: 0; }
 @media (max-width: 620px) {
   .zones .zone-rev { margin-top: 0; }
 }
+
+/* Repères (dictionnaires des écritures et des panneaux) */
+#dico-contenu { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; margin-top: 16px; }
+.fiche-dico { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+.fiche-dico h3 { margin: 0 0 10px; font-size: 18px; display: flex; align-items: center; }
+.fiche-dico p { margin: 8px 0 0; font-size: 14px; line-height: 1.5; }
+.dico-exemples { display: flex; flex-wrap: wrap; gap: 8px; }
+.dico-exemples .enseigne-mini { font-size: 18px; padding: 3px 10px; box-shadow: none; cursor: help; }
+.dico-confusion { color: var(--muted); }
+.dico-ou { color: var(--muted); font-size: 13px !important; }
+.dico-galerie { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; margin-top: 10px; }
+.dico-galerie a { display: block; }
+.dico-galerie img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 6px; background: var(--land-out); }
+.dico-source { grid-column: 1 / -1; color: var(--muted); font-size: 12px; }
+.mosaique-photos { grid-template-columns: repeat(3, 1fr); inset: -10px -20px; transform: rotate(-4deg); }
+.mosaique-photos img { aspect-ratio: 4 / 3; object-fit: cover; }
+.dico-ligne { grid-template-columns: 1fr auto !important; }
+.dico-ligne span { color: var(--fg) !important; font-size: 15px; }
+@media (max-width: 520px) { #dico-contenu { grid-template-columns: 1fr; } }
+.fiche-ecriture { grid-column: 1 / -1; background: var(--papier); }
+.fiche-ecriture h3 { font-size: 20px; }

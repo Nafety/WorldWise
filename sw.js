@@ -1,10 +1,13 @@
 // Service worker : tout le site est mis en cache à l'installation, pour que
 // l'application marche hors ligne.
-const CACHE = "worldwise-v13";
+const CACHE = "worldwise-v24";
 importScripts("data.js");
 
+// Les photos des repères de panneaux (dossier photos/) ne sont pas
+// préchargées : chacune est gardée en cache la première fois qu'elle est vue.
 const FICHIERS = [
   "./", "style.css", "app.js", "data.js", "info.js", "decoupes.js", "world.js",
+  "ecritures.js", "langues.js", "photos.js", "panneaux_notes.js",
   "vendor/d3.min.js", "vendor/topojson-client.min.js", "manifest.webmanifest",
   "icons/icon.svg", "icons/icon-192.png", "icons/icon-512.png",
   "icons/icon-maskable-512.png", "icons/apple-touch-icon.png",
@@ -26,14 +29,14 @@ self.addEventListener("activate", (e) => {
   );
 });
 
-// Drapeaux et icônes ne changent jamais : servis depuis le cache. Le reste (page,
+// Drapeaux, icônes et photos ne changent jamais : servis depuis le cache. Le reste (page,
 // code, données) vient du réseau d'abord, revérifié auprès du serveur, pour qu'une
 // mise à jour se voie dès le premier chargement ; le cache ne sert que hors ligne
 // ou si le réseau ne répond pas en 3 s.
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== "GET" || url.origin !== location.origin) return;
-  const fixe = /\/(flags|icons|vendor)\//.test(url.pathname);
+  const fixe = /\/(flags|icons|vendor|photos)\//.test(url.pathname);
   e.respondWith(
     caches.open(CACHE).then(async (cache) => {
       const enCache = await cache.match(e.request, { ignoreSearch: true });

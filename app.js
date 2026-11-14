@@ -20,6 +20,8 @@ const ICONES = {
   liste: '<path d="M9 6h12M9 12h12M9 18h12M4 6h.01M4 12h.01M4 18h.01"/>',
   reviser: '<path d="M6 3h12v18l-6-4.5L6 21z"/>',
   point: '<circle cx="12" cy="12" r="3.5" fill="currentColor"/><circle cx="12" cy="12" r="8.5" stroke-dasharray="3 3"/>',
+  ecritures: '<path d="M3 19l5-14 5 14M4.8 14h6.4M15 8h6M18 6v2M16 16c2.5-1.5 4-4.5 4.5-8"/>',
+  dico: '<path d="M3 5h6a3 3 0 0 1 3 3v12a2 2 0 0 0-2-2H3zM21 5h-6a3 3 0 0 0-3 3v12a2 2 0 0 1 2-2h7z"/>',
 };
 const icone = (nom) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONES[nom]}</svg>`;
 // Cases du menu. Les trois premiers jeux suivent le mode de réponse choisi dans
@@ -30,12 +32,17 @@ const SECTIONS = [
     ["caps", "Capitales", "Trouve la capitale à partir du drapeau"],
     ["map", "Nommer sur la carte", "Un pays est surligné : lequel ?"],
     ["placer", "Placer sur la carte", "Trouve le pays demandé sur la carte"]] },
+  { titre: "Comme dans GeoGuessr", jeux: [
+    ["ecritures", "Langues", "Dans quel pays lit-on ce mot ?"],
+    ["dico-ecritures", "Repères : langues", "Écritures, lettres spéciales et pays de chaque langue"],
+    ["dico-panneaux", "Repères : panneaux", "La signalisation de chaque pays, en exemples"]] },
   { titre: "Découvrir", jeux: [
     ["explore", "Explorer la carte", "Drapeau, capitale et infos de chaque pays"],
     ["liste", "Liste", "Tous les drapeaux et capitales"]] },
 ];
 const REPONSES = [["qcm", "4 choix"], ["saisie", "Saisie libre"]];
-const NOMS_THEMES = { flags: "Drapeaux", caps: "Capitales", map: "Carte" };
+const NOMS_THEMES = { flags: "Drapeaux", caps: "Capitales", map: "Carte", ecritures: "Langues" };
+const estDico = (t) => t.startsWith("dico-");
 const NOMS_MODES = { qcm: "4 choix", saisie: "Saisie libre", placer: "Placer" };
 const SOUS_REGIONS = {
   "Northern Europe": "Europe du Nord", "Western Europe": "Europe de l'Ouest",
@@ -52,7 +59,7 @@ const SOUS_REGIONS = {
   "Antarctic": "Antarctique",
 };
 // Langues que les navigateurs ne savent pas toujours nommer en français.
-const LANGUES = {
+const NOMS_LANGUES = {
   bar: "bavarois", smi: "same", gsw: "suisse allemand", nrf: "jersiais", nfr: "guernesiais",
   arc: "araméen", lao: "lao", tet: "tétoum", zdj: "comorien", lua: "tshiluba",
   pov: "créole de Guinée-Bissau", mfe: "créole mauricien", ber: "berbère", hgm: "khoekhoe",
@@ -142,10 +149,23 @@ function distance(a, b) {
 }
 
 const pourCapitales = () => etat.theme === "caps";
-const attendu = (p) => (pourCapitales() ? p.cap : p.nom);
-const acceptees = (p) => (pourCapitales()
-  ? [...p.capitales.map((c) => c.nom), ...p.altC]
+const pourEcritures = () => etat.theme === "ecritures";
+// Dans le jeu des langues, une question est un mot ({ l: langue, mot, sens, pays: [codes] }) ;
+// la réponse est un des pays de la langue.
+const estMot = (p) => p && p.mot !== undefined;
+const paysDuMot = (m) => m.pays.map((c) => PAR_CODE.get(c));
+const listePays = (m, max = 4) => {
+  const noms = paysDuMot(m).map((p) => p.nom);
+  return noms.length > max ? `${noms.slice(0, max).join(", ")}… (${noms.length} pays)` : noms.join(", ");
+};
+const attendu = (p) => (estMot(p) ? listePays(p) : pourCapitales() ? p.cap : p.nom);
+const acceptees = (p) => (estMot(p) ? paysDuMot(p).flatMap((q) => [q.nom, ...q.altN])
+  : pourCapitales() ? [...p.capitales.map((c) => c.nom), ...p.altC]
   : [p.nom, ...p.altN]);
+// Les autres réponses possibles, qu'une saisie ne doit pas pouvoir « corriger » en la bonne.
+const autresReponses = (p) => (estMot(p)
+  ? PAYS.filter((q) => !p.pays.includes(q.code)).flatMap((q) => [q.nom, ...q.altN])
+  : PAYS.filter((q) => q !== p).flatMap((q) => acceptees(q)));
 // Plusieurs continents se cumulent : leur zone a pour id « EU+AS » (ordre de ZONES).
 const COMBINEES = new Map();
 function zoneCombinee(id) {
@@ -186,10 +206,35 @@ const drapeau = (p) => `flags/${p.code}.svg`;
 const jouable = (p, theme) => (theme !== "caps" || (p.capitales.length && !DOUBLES.has(p.code)))
   && (theme !== "flags" || !DOUBLES.has(p.code))
   && (theme !== "map" || (p.num && FORMES.has(p.num)) || (p.ll && aUnPoint(p)));
-// En zone « À réviser », chaque jeu ne prend que les pays de sa propre liste.
+// En zone « À réviser », chaque jeu ne prend que les pays de sa propre liste
+// (les jeux GeoGuessr n'en ont pas).
 function selection(z = etat.zone, theme = etat.theme) {
+  if (theme === "ecritures") return z === "REV" ? [] : motsDe(z);
   return PAYS.filter((p) => (z === "REV" ? REVISER[theme].has(p.code) : dansZone(p, z)) && jouable(p, theme));
 }
+
+// --- Langues -----------------------------------------------------------------
+const ECRITURE = new Map(ECRITURES.map((e) => [e.id, e]));
+// Pays d'une langue dans la zone (la bonne réponse proposée en est tirée).
+const paysLangueDans = (l, z) => l.pays.split(" ").filter((c) => PAR_CODE.has(c) && dansZone(PAR_CODE.get(c), z));
+const languesDe = (z) => LANGUES.filter((l) => paysLangueDans(l, z).length);
+const motsDe = (z) => languesDe(z).flatMap((l) => l.mots.map(([mot, sens]) =>
+  ({ l, mot, sens, pays: l.pays.split(" ").filter((c) => PAR_CODE.has(c)), code: "" })));
+// Une partie : autant de mots en alphabet latin que dans les autres écritures,
+// deux mots au plus par langue, 60 questions au plus.
+function tirageLangues(mots) {
+  const parLangue = new Map();
+  for (const m of melanger(mots.slice())) parLangue.set(m.l, [...(parLangue.get(m.l) || []), m]);
+  const latin = [], autres = [];
+  for (const [l, liste] of parLangue) (l.ecriture === "latin" ? latin : autres).push(...liste.slice(0, 2));
+  const n = Math.min(30, latin.length, autres.length) || Math.max(latin.length, autres.length);
+  return melanger([...melanger(latin).slice(0, n), ...melanger(autres).slice(0, n)]);
+}
+// Questions d'une nouvelle partie du jeu courant.
+const questionsDuJeu = () => (pourEcritures() ? tirageLangues(selection()) : selection());
+
+// --- Photos des panneaux (base fixe, photos.js), pour le dictionnaire ----------
+const photosDe = (theme, p) => PHOTOS_JEUX[theme][p.code] || [];
 
 // Carte à dessiner : en « À réviser », le continent commun s'il n'y en a qu'un, sinon le monde.
 function zoneCarte(z, pays) {
@@ -205,7 +250,7 @@ function verifier(saisie, p) {
   if (!s) return { ok: false };
   const bonnes = acceptees(p).map(normaliser);
   if (bonnes.includes(s)) return { ok: true };
-  const autres = new Set(PAYS.filter((q) => q !== p).flatMap((q) => acceptees(q).map(normaliser)));
+  const autres = new Set(autresReponses(p).map(normaliser));
   if (autres.has(s)) return { ok: false };
   const proche = bonnes.some((b) => distance(s, b) <= (b.length >= 10 ? 2 : b.length >= 5 ? 1 : 0));
   return { ok: proche, approx: proche };
@@ -267,7 +312,13 @@ const POINTS_PAR_DEFAUT = new Set([
   // Antarctique et mers australes
   "bv", "gs", "hm", "tf",
 ]);
-const POINT_DEFAUT = (p) => POINTS_PAR_DEFAUT.has(p.code);
+// Et toutes les îles de moins de 30 000 km² sans frontière terrestre (Malte,
+// Jamaïque, Fidji…) : petites sur la carte, elles ont toutes leur point.
+const ILE_PETITE = (p) => {
+  const i = INFOS[p.code];
+  return !!i && !(i.voisins && i.voisins.length) && i.sup > 0 && i.sup < 30000;
+};
+const POINT_DEFAUT = (p) => POINTS_PAR_DEFAUT.has(p.code) || ILE_PETITE(p);
 // Choix du joueur, pays par pays, depuis la Liste (code -> true/false) ; sinon la règle ci-dessus.
 let CHOIX_POINTS = {};
 try { CHOIX_POINTS = JSON.parse(localStorage.getItem("worldwise-points")) || {}; } catch (e) {}
@@ -388,8 +439,13 @@ function creerCarte(conteneur) {
       if (!actifs.has(p.code)) continue;
       const e = elems.get(p.code) || {};
       elems.set(p.code, e);
-      e.centre = e.forme ? chemin.centroid(e.forme) : p.ll ? proj(p.ll) : null;
-      const pt = aUnPoint(p) ? e.centre : null;
+      const point = aUnPoint(p);
+      // Un point se place au centre géographique du pays (sur la sphère) : le centre
+      // du dessin à plat tombe n'importe où pour un archipel à cheval sur le 180e
+      // méridien (Kiribati se retrouvait sur l'Afrique dans la carte du monde).
+      e.centre = !e.forme ? (p.ll ? proj(p.ll) : null)
+        : point ? proj(p.ll || d3.geoCentroid(e.forme)) : chemin.centroid(e.forme);
+      const pt = point ? e.centre : null;
       if (pt && isFinite(pt[0])) {
         e.marq = marqueurs.append("circle").attr("class", "marq point").attr("data-code", p.code)
           .attr("cx", pt[0]).attr("cy", pt[1]).attr("r", R)
@@ -603,6 +659,20 @@ const VISUELS = {
       `<div class="mini-fiche"><img src="${drapeau(v.p)}" alt=""><span><strong>${echapper(v.p.nom)}</strong>` +
       `${echapper(v.p.cap || "")}</span></div>`;
   },
+  ecritures(zid) {
+    const choix = melanger(languesDe(zid === "REV" ? "WORLD" : zid).slice()).slice(0, 3);
+    return `<div class="papier"><div class="enseignes">${choix.map((l, i) =>
+      `<span class="enseigne-mini e${i}">${echapper(auHasard(l.mots)[0])}</span>`).join("")}</div></div>`;
+  },
+  "dico-ecritures"(zid) {
+    const choix = melanger(languesDe(zid).slice()).slice(0, 3);
+    return `<div class="papier"><div class="mini-liste">${choix.map((l) =>
+      `<div class="dico-ligne"><strong>${echapper(l.nom)}</strong><span>${echapper(l.mots[0][0])}</span></div>`).join("")}</div></div>`;
+  },
+  "dico-panneaux"(zid) {
+    const photos = melanger(paysPanneaux(zid).flatMap((p) => photosDe("panneaux", p).slice(0, 1))).slice(0, 6);
+    return `<div class="mosaique mosaique-photos">${photos.map(([f]) => `<img src="${f}" alt="" loading="lazy">`).join("")}</div>`;
+  },
   liste(zid) {
     const lignes = melanger(PAYS.filter((p) => dansZone(p, zid) && p.capitales.length)).slice(0, 4);
     return `<div class="papier"><div class="mini-liste">${lignes.map((p) =>
@@ -635,25 +705,25 @@ function construireMenu() {
     bloc.append(el("h2", null, section.titre));
     const tuiles = el("div", "tuiles");
     for (const [choix, titre, desc] of section.jeux) {
+      if (estDico(choix)) {
+        tuiles.append(tuile(choix, titre, desc, choix === "dico-ecritures"
+          ? `${languesDe(zoneDico()).length} langues` : `${paysDico(zoneDico()).length} pays`));
+        continue;
+      }
       const decouverte = choix === "liste" || choix === "explore";
+      const geo = choix === "ecritures";
       const n = decouverte ? PAYS.filter((p) => dansZone(p, etat.zone)).length
+        : choix === "ecritures" ? (etat.zone === "REV" ? 0 : languesDe(etat.zone).length)
         : selection(etat.zone, choix === "placer" ? "map" : choix).length;
       const vide = n === 0 && etat.zone === "REV";
       const compte = vide ? (choix === "liste" ? "Choisis-y les pays à réviser"
-        : decouverte ? "Aucun pays à réviser" : "Aucun pays à réviser pour ce jeu")
+        : decouverte ? "Aucun pays à réviser" : geo ? "Pas de liste « à réviser » pour ce jeu"
+        : "Aucun pays à réviser pour ce jeu")
         : decouverte ? `${n} pays et territoires`
+        : choix === "ecritures" ? `${n} langues · ${nomReponse}`
         : `${n} question${n > 1 ? "s" : ""}${choix === "placer" ? "" : ` · ${nomReponse}`}`;
-      const b = el("button", `tuile tuile-${choix}`);
-      b.dataset.jeu = choix;
+      const b = tuile(choix, titre, desc, compte);
       b.disabled = vide && choix !== "liste";
-      b.innerHTML = `<div class="visuel">${VISUELS[choix](zoneVisuel(choix))}</div>`;
-      const texte = el("div", "texte");
-      const tete = el("div", "tete");
-      tete.innerHTML = `<span class="icone">${icone(choix === "placer" ? "map" : choix)}</span>`;
-      tete.append(el("strong", null, titre));
-      texte.append(tete, el("span", "desc", desc), el("span", "compte", compte));
-      b.append(texte);
-      b.onclick = () => lancer(choix);
       tuiles.append(b);
     }
     bloc.append(tuiles);
@@ -661,10 +731,24 @@ function construireMenu() {
   }
 }
 
+function tuile(choix, titre, desc, compte) {
+  const b = el("button", `tuile tuile-${choix}`);
+  b.dataset.jeu = choix;
+  b.innerHTML = `<div class="visuel">${VISUELS[choix](zoneVisuel(choix))}</div>`;
+  const texte = el("div", "texte");
+  const tete = el("div", "tete");
+  tete.innerHTML = `<span class="icone">${icone(choix === "placer" ? "map" : estDico(choix) ? "dico" : choix)}</span>`;
+  tete.append(el("strong", null, titre));
+  texte.append(tete, el("span", "desc", desc), el("span", "compte", compte));
+  b.append(texte);
+  b.onclick = () => lancer(choix);
+  return b;
+}
+
 // Illustrations en zone « À réviser » : les pays de la liste quand il y en a, sinon le monde.
 function zoneVisuel(choix) {
   if (etat.zone !== "REV") return etat.zone;
-  if (["map", "placer", "explore"].includes(choix)) return "WORLD";
+  if (["map", "placer", "explore", "ecritures"].includes(choix) || estDico(choix)) return "WORLD";
   const n = choix === "liste" ? PAYS.filter((p) => dansZone(p, "REV")).length : selection("REV", choix).length;
   return n ? "REV" : "WORLD";
 }
@@ -681,10 +765,11 @@ function lancer(choix) {
     return revue();
   }
   if (choix === "explore") return explorer(etat.zone);
+  if (estDico(choix)) return dictionnaire(choix, zoneDico());
   etat.theme = choix === "placer" ? "map" : choix;
   etat.mode = choix === "placer" ? "placer" : etat.reponse;
   sauver();
-  demarrer(selection());
+  demarrer(questionsDuJeu());
 }
 
 // --- Jeu -------------------------------------------------------------------
@@ -728,8 +813,15 @@ function question() {
   $("#retour").className = "";
 
   const q = $("#question");
-  q.dataset.code = p.code;
-  if (etat.theme === "flags" || etat.theme === "caps") {
+  if (pourEcritures()) {
+    // Le pays proposé parmi les 4 choix : un des pays de la langue, dans la zone si possible.
+    const z = etat.zone === "REV" ? "WORLD" : etat.zone;
+    const dans = p.pays.filter((c) => dansZone(PAR_CODE.get(c), z));
+    p.bon = PAR_CODE.get(auHasard(dans.length ? dans : p.pays));
+    p.code = p.bon.code;
+    q.innerHTML = '<div class="enseigne"></div><p class="consigne">Dans quel pays ?</p>';
+    q.querySelector(".enseigne").textContent = p.mot;
+  } else if (etat.theme === "flags" || etat.theme === "caps") {
     q.innerHTML = `<img class="drapeau" alt="drapeau à identifier" src="${drapeau(p)}">`;
   } else if (etat.mode === "placer") {
     q.innerHTML = "Où se trouve <strong></strong> ?";
@@ -740,6 +832,7 @@ function question() {
     carteJeu.montrerAnneau(p);
   }
 
+  q.dataset.code = p.code;
   const zoneRep = $("#reponses");
   zoneRep.innerHTML = "";
   if (etat.mode === "qcm") {
@@ -766,16 +859,22 @@ function question() {
       const r = verifier(input.value, p);
       input.disabled = true;
       input.classList.add(r.ok ? "good" : "bad");
-      const complet = pourCapitales() && p.capitales.length > 1 ? `Capitales : ${p.cap}` : "";
-      repondre(p, r.ok, r.ok ? (r.approx ? `Orthographe : ${attendu(p)}` : complet) : `Réponse : ${attendu(p)}`);
+      const complet = pourCapitales() && p.capitales.length > 1 ? `Capitales : ${p.cap}`
+        : pourEcritures() ? detailMot(p) : "";
+      repondre(p, r.ok, r.ok ? (r.approx && !estMot(p) ? `Orthographe : ${attendu(p)}` : complet)
+        : `Réponse : ${attendu(p)}${pourEcritures() ? ` · ${detailMot(p)}` : ""}`);
     };
     zoneRep.append(form);
     input.focus();
   }
 
   const suivant = jeu.liste[jeu.i + 1];
-  if (suivant && etat.theme !== "map") new Image().src = drapeau(suivant);
+  if (suivant && (etat.theme === "flags" || etat.theme === "caps")) new Image().src = drapeau(suivant);
 }
+
+// « Polonais · boulangerie », dit après la réponse.
+const detailMot = (m) => `${m.l.nom} · « ${m.sens} »`;
+
 
 // --- Suggestions de la saisie libre -----------------------------------------
 // Tous les pays (ou toutes les capitales) du monde sont proposés, pas seulement
@@ -871,6 +970,24 @@ function brancherSuggestions(input, ul, valider) {
 // 3 leurres du même continent, pris dans la même sélection : plus instructif
 // que des réponses absurdes.
 function propositions(p) {
+  // Langues : des pays où on écrit une langue voisine (même alphabet, puis
+  // alphabet ressemblant), jamais un pays où la langue du mot se lit aussi.
+  if (pourEcritures()) {
+    const ecr = ECRITURE.get(p.l.ecriture);
+    const voisines = (f) => melanger(LANGUES.filter((l) => l !== p.l && f(l)).slice())
+      .flatMap((l) => melanger(l.pays.split(" ").slice()));
+    const ordre = [
+      ...voisines((l) => l.ecriture === p.l.ecriture),
+      ...voisines((l) => ecr.famille && ECRITURE.get(l.ecriture).famille === ecr.famille),
+      ...melanger(PAYS.map((q) => q.code)),
+    ];
+    const z = etat.zone === "REV" ? "WORLD" : etat.zone;
+    const possibles = [...new Set(ordre)].filter((c) => PAR_CODE.has(c) && !p.pays.includes(c) && !PAR_CODE.get(c).partie);
+    // de la zone choisie d'abord (en Europe, des leurres européens)
+    const leurres = [...possibles.filter((c) => dansZone(PAR_CODE.get(c), z)), ...possibles]
+      .filter((c, i, t) => t.indexOf(c) === i).slice(0, 3).map((c) => PAR_CODE.get(c));
+    return melanger([p.bon, ...leurres]);
+  }
   const vus = new Set([attendu(p)]);
   const leurres = [];
   const candidats = selection("WORLD").filter((q) => q !== p);
@@ -886,13 +1003,14 @@ function propositions(p) {
 
 function choisir(bouton, option, p) {
   if (jeu.bloque) return;
-  const juste = option === p;
+  const juste = pourEcritures() ? option === p.bon : option === p;
   for (const b of document.querySelectorAll("#reponses button")) {
     b.disabled = true;
     if (b.dataset.code === p.code) b.classList.add("good");
   }
   if (!juste) bouton.classList.add("bad");
-  repondre(p, juste, "");  // les couleurs des boutons suffisent
+  // Les couleurs des boutons suffisent ; pour un mot, on dit aussi la langue, le sens et ses pays.
+  repondre(p, juste, pourEcritures() ? `${detailMot(p)}${juste ? "" : ` · ${listePays(p)}`}` : "");
 }
 
 function clicCarte(clique) {
@@ -945,7 +1063,8 @@ function fin() {
     ? `${jeu.erreurs.length} erreur(s) à revoir :`
     : "Aucune erreur.";
   $("#rejouer-erreurs").hidden = !jeu.erreurs.length;
-  remplirTable($("#fin-erreurs"), jeu.erreurs, [etat.theme], majBoutonsFin);
+  if (pourEcritures()) remplirMots($("#fin-erreurs"), jeu.erreurs);
+  else remplirTable($("#fin-erreurs"), jeu.erreurs, REVISER[etat.theme] ? [etat.theme] : [], majBoutonsFin);
   majBoutonsFin();
   jeu.bloque = false;
   ecran("fin");
@@ -954,6 +1073,10 @@ function fin() {
 // Boutons de l'écran de fin, recalculés à chaque ajout ou retrait.
 function majBoutonsFin() {
   const t = etat.theme;
+  if (!REVISER[t]) {  // jeux GeoGuessr : pas de liste « à réviser »
+    for (const id of ["#ajouter-erreurs", "#retirer-reussis", "#fin-aide"]) $(id).hidden = true;
+    return;
+  }
   const manquantes = [...new Set(jeu.erreurs)].filter((p) => !REVISER[t].has(p.code));
   const tout = $("#ajouter-erreurs");
   tout.hidden = !manquantes.length;
@@ -1012,6 +1135,21 @@ function boutonPoint(p, apres) {
   b.onclick = () => { choisirPoint(p, !aUnPoint(p)); maj(); if (apres) apres(); };
   maj();
   return b;
+}
+
+// Erreurs du jeu des écritures : le mot, son écriture, sa langue et son sens.
+function remplirMots(table, liste) {
+  table.innerHTML = "";
+  for (const m of new Set(liste)) {
+    const tr = table.insertRow();
+    const mot = tr.insertCell();
+    mot.className = "mot";
+    mot.textContent = m.mot;
+    const nom = tr.insertCell();
+    nom.textContent = m.l.nom;
+    nom.append(el("small", null, `« ${m.sens} » · ${listePays(m, 6)}`));
+    tr.insertCell().className = "cap";
+  }
 }
 
 // themes : boutons « à réviser » en bout de ligne (aucun, celui du quiz, ou les trois dans la liste) ;
@@ -1084,8 +1222,8 @@ function puces(liste) {
 }
 
 function langue(code, nomAnglais) {
-  let nom = LANGUES[code] || nomAnglais;
-  if (!LANGUES[code]) {
+  let nom = NOMS_LANGUES[code] || nomAnglais;
+  if (!NOMS_LANGUES[code]) {
     try {
       const fr = nomsLangues.of(code);
       if (fr && fr.toLowerCase() !== code) nom = fr;
@@ -1206,6 +1344,77 @@ function revue() {
   ecran("revue");
 }
 
+// --- Repères (dictionnaires des jeux GeoGuessr) -------------------------------
+
+const zoneDico = () => (etat.zone === "REV" ? "WORLD" : etat.zone);
+const paysPanneaux = (z) => PAYS.filter((p) => photosDe("panneaux", p).length && dansZone(p, z));
+// Dans le dictionnaire, aussi les pays qui ont une fiche mais pas (encore) de photo.
+const paysDico = (z) => PAYS.filter((p) => (photosDe("panneaux", p).length || NOTES_PANNEAUX[p.code]) && dansZone(p, z));
+const nomsPays = (codes) => codes.split(" ").map((c) => PAR_CODE.get(c)).filter(Boolean).map((p) => p.nom).join(", ");
+
+function dictionnaire(type, z) {
+  const ecr = type === "dico-ecritures";
+  const compte = (id) => (ecr ? languesDe(id).length : paysDico(id).length);
+  segment($("#seg-dico"), libellesZones(compte, etat.zone).filter(([id]) => id !== "REV"), z,
+    (v) => dictionnaire(type, v));
+  const contenu = $("#dico-contenu");
+  contenu.innerHTML = "";
+  if (ecr) {
+    // Par écriture : comment la reconnaître, puis chacune de ses langues (lettres
+    // spéciales, pays, exemples ; survoler un exemple donne son sens).
+    const langues = languesDe(z);
+    $("#dico-titre").textContent = `Repères : ${langues.length} langues`;
+    for (const e of ECRITURES) {
+      const siennes = langues.filter((l) => l.ecriture === e.id);
+      if (!siennes.length) continue;
+      const tete = el("article", "fiche-dico fiche-ecriture");
+      tete.append(el("h3", null, `Alphabet ${e.nom.toLowerCase()}`), el("p", null, e.reperes));
+      if (e.confusion) tete.append(el("p", "dico-confusion", `À ne pas confondre : ${e.confusion}`));
+      contenu.append(tete);
+      for (const l of siennes) {
+        const fiche = el("article", "fiche-dico");
+        fiche.append(el("h3", null, l.nom));
+        const ex = el("div", "dico-exemples");
+        for (const [mot, sens] of l.mots) {
+          const m = el("span", "enseigne-mini", mot);
+          m.title = sens;
+          ex.append(m);
+        }
+        fiche.append(ex, el("p", null, l.indices), el("p", "dico-ou", `Pays : ${nomsPays(l.pays)}.`));
+        contenu.append(fiche);
+      }
+    }
+  } else {
+    const liste = paysDico(z).sort((a, b) => a.nom.localeCompare(b.nom, "fr"));
+    $("#dico-titre").textContent = `Repères : panneaux de ${liste.length} pays`;
+    for (const p of liste) {
+      const f = el("article", "fiche-dico");
+      const h = el("h3");
+      h.innerHTML = `<img class="drapeau-mini" alt="" src="${drapeau(p)}">`;
+      h.append(p.nom);
+      f.append(h);
+      if (NOTES_PANNEAUX[p.code]) f.append(el("p", null, NOTES_PANNEAUX[p.code]));
+      const galerie = el("div", "dico-galerie");
+      for (const [fichier, auteur] of photosDe("panneaux", p)) {
+        const lien = el("a");
+        lien.href = fichier;
+        lien.target = "_blank";
+        lien.title = `Photo : ${auteur ? `${auteur}, ` : ""}Mapillary (CC BY-SA 4.0)`;
+        const img = el("img");
+        img.loading = "lazy";
+        img.alt = `Panneau, ${p.nom}`;
+        img.src = fichier;
+        lien.append(img);
+        galerie.append(lien);
+      }
+      f.append(galerie);
+      contenu.append(f);
+    }
+    contenu.append(el("p", "dico-source", "Repères des pays d'Europe d'après la carte de la signalisation européenne de u/Melongated. Photos : Mapillary (CC BY-SA 4.0)."));
+  }
+  ecran("dico");
+}
+
 // --- Application installable -------------------------------------------------
 
 if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
@@ -1237,9 +1446,10 @@ $("#installer").onclick = async () => {
 $("#quitter").onclick = menu;
 $("#fin-menu").onclick = menu;
 $("#explorer-menu").onclick = menu;
-$("#recommencer").onclick = () => demarrer(selection());
+$("#recommencer").onclick = () => demarrer(questionsDuJeu());
 $("#rejouer-erreurs").onclick = () => demarrer(jeu.erreurs);
 $("#revue-menu").onclick = menu;
+$("#dico-menu").onclick = menu;
 
 menu();
 })();
